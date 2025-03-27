@@ -1021,44 +1021,52 @@ constexpr uint128 operator-(uint128 lhs, uint128 rhs) {
 #endif
 }
 
+namespace int128_internal {
+// Returns MakeUint128(0, lhs) * MakeUint128(0, rhs),
+// but this function is slightly faster.
+inline uint128 Mul64x64(uint64_t lhs, uint64_t rhs) {
+#if defined(ABSL_HAVE_INTRINSIC_INT128)
+  return static_cast<unsigned __int128>(lhs) *
+         static_cast<unsigned __int128>(rhs);
+#elif defined(_MSC_VER) && defined(_M_X64) && !defined(_M_ARM64EC)
+  uint64_t result_high;
+  uint64_t result_low = _umul128(lhs, rhs, &result_high);
+  return MakeUint128(result_high, result_low);
+#else   // ABSL_HAVE_INTRINSIC128
+  uint64_t lhigh = lhs >> 32;
+  uint64_t llow = lhs & 0xffffffff;
+  uint64_t rhigh = rhs >> 32;
+  uint64_t rlow = rhs & 0xffffffff;
+  uint64_t mhh = lhigh * rhigh;
+  uint64_t mll = llow * rlow;
+  uint64_t mlh = llow * rhigh;
+  uint64_t mhl = lhigh * rlow;
+  uint64_t ma = mlh + mhl;
+  mhh += ma >> 32;
+  uint64_t rl = mll + (ma << 32);
+  mhh += uint64_t(ma < mlh) << 32;
+  mhh += rl < mll;
+  return MakeUint128(mhh, rl);
+#endif  // ABSL_HAVE_INTRINSIC128
+}
+}  // namespace int128_internal
+
 inline uint128 operator*(uint128 lhs, uint128 rhs) {
 #if defined(ABSL_HAVE_INTRINSIC_INT128)
   // TODO(strel) Remove once alignment issues are resolved and unsigned __int128
   // can be used for uint128 storage.
   return static_cast<unsigned __int128>(lhs) *
          static_cast<unsigned __int128>(rhs);
-#elif defined(_MSC_VER) && defined(_M_X64) && !defined(_M_ARM64EC)
-  uint64_t carry;
-  uint64_t low = _umul128(Uint128Low64(lhs), Uint128Low64(rhs), &carry);
-  return MakeUint128(Uint128Low64(lhs) * Uint128High64(rhs) +
-                         Uint128High64(lhs) * Uint128Low64(rhs) + carry,
-                     low);
 #else   // ABSL_HAVE_INTRINSIC128
-  uint64_t a32 = Uint128Low64(lhs) >> 32;
-  uint64_t a00 = Uint128Low64(lhs) & 0xffffffff;
-  uint64_t b32 = Uint128Low64(rhs) >> 32;
-  uint64_t b00 = Uint128Low64(rhs) & 0xffffffff;
-  uint128 result =
-      MakeUint128(Uint128High64(lhs) * Uint128Low64(rhs) +
-                      Uint128Low64(lhs) * Uint128High64(rhs) + a32 * b32,
-                  a00 * b00);
-  result += uint128(a32 * b00) << 32;
-  result += uint128(a00 * b32) << 32;
-  return result;
+  uint64_t lhigh = Uint128High64(lhs);
+  uint64_t llow = Uint128Low64(lhs);
+  uint64_t rhigh = Uint128High64(rhs);
+  uint64_t rlow = Uint128Low64(rhs);
+  uint128 ml = int128_internal::Mul64x64(llow, rlow);
+  return MakeUint128(lhigh * rlow + llow * rhigh + Uint128High64(ml),
+                     Uint128Low64(ml));
 #endif  // ABSL_HAVE_INTRINSIC128
 }
-
-#if defined(ABSL_HAVE_INTRINSIC_INT128)
-inline uint128 operator/(uint128 lhs, uint128 rhs) {
-  return static_cast<unsigned __int128>(lhs) /
-         static_cast<unsigned __int128>(rhs);
-}
-
-inline uint128 operator%(uint128 lhs, uint128 rhs) {
-  return static_cast<unsigned __int128>(lhs) %
-         static_cast<unsigned __int128>(rhs);
-}
-#endif
 
 // Increment/decrement operators.
 
