@@ -439,19 +439,23 @@ TEST(Uint128, DivideAndMod) {
 
 TEST(Uint128, DivideAndModRandomInputs) {
   const int kNumIters = 1 << 18;
-  std::minstd_rand random(testing::UnitTest::GetInstance()->random_seed());
+  std::mt19937_64 random(testing::UnitTest::GetInstance()->random_seed());
   std::uniform_int_distribution<uint64_t> uniform_uint64;
+  std::uniform_int_distribution<int> uniform_shift(0, 127);
   for (int i = 0; i < kNumIters; ++i) {
     const absl::uint128 a =
-        absl::MakeUint128(uniform_uint64(random), uniform_uint64(random));
+        absl::MakeUint128(uniform_uint64(random), uniform_uint64(random)) >>
+        uniform_shift(random);
     const absl::uint128 b =
-        absl::MakeUint128(uniform_uint64(random), uniform_uint64(random));
+        absl::MakeUint128(uniform_uint64(random), uniform_uint64(random)) >>
+        uniform_shift(random);
     if (b == 0) {
       continue;  // Avoid a div-by-zero.
     }
     const absl::uint128 q = a / b;
     const absl::uint128 r = a % b;
     ASSERT_EQ(a, b * q + r);
+    ASSERT_LT(r, b);
   }
 }
 
